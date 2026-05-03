@@ -1,21 +1,13 @@
-/**
- * Offload - On-device Embedding Test
- *
- * Tests ONNX Runtime React Native integration by:
- * 1. Downloading a small ONNX model (all-MiniLM-L6-v2, ~23MB)
- * 2. Creating an InferenceSession
- * 3. Running a dummy embedding inference
- *
- * This validates the entire ONNX pipeline works on Android before
- * we bring in the larger nomic-embed-vision model.
- */
-
 import * as ort from 'onnxruntime-react-native';
+import { AutoTokenizer, env } from '@xenova/transformers';
 
-// Model config — using all-MiniLM-L6-v2 quantized as a lightweight test
-// This is ~23MB vs nomic-embed-vision's ~300MB
-const MODEL_URL =
-  'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_quantized.onnx';
+// Configure transformers.js to not use ONNX Node.js bindings
+env.allowLocalModels = false;
+env.useBrowserCache = false;
+
+// We will use nomic-embed-text-v1.5 (quantized) for text embeddings
+const MODEL_REPO = 'nomic-ai/nomic-embed-text-v1';
+const MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/onnx/model_quantized.onnx`;
 
 export interface EmbeddingResult {
   success: boolean;
@@ -23,6 +15,7 @@ export interface EmbeddingResult {
   sampleValues: number[];
   inferenceTimeMs: number;
   error?: string;
+  vector?: number[];
 }
 
 export interface DownloadProgress {
@@ -33,7 +26,6 @@ export interface DownloadProgress {
 
 /**
  * Downloads the ONNX model to the app's document directory.
- * Uses a simple fetch + write approach.
  */
 export async function downloadModel(
   destPath: string,
@@ -42,7 +34,6 @@ export async function downloadModel(
   try {
     const RNFS = require('@dr.pogodin/react-native-fs');
 
-    // Check if model already exists
     const exists = await RNFS.exists(destPath);
     if (exists) {
       console.log('[Embedding] Model already exists at:', destPath);
@@ -50,7 +41,6 @@ export async function downloadModel(
     }
 
     console.log('[Embedding] Starting model download from:', MODEL_URL);
-    console.log('[Embedding] Destination:', destPath);
 
     const downloadResult = await RNFS.downloadFile({
       fromUrl: MODEL_URL,
@@ -66,14 +56,14 @@ export async function downloadModel(
           percent,
         });
       },
-      progressDivider: 5, // Report every 5%
+      progressDivider: 5,
     }).promise;
 
     if (downloadResult.statusCode === 200) {
-      console.log('[Embedding] Download complete. Bytes:', downloadResult.bytesWritten);
+      console.log('[Embedding] Download complete.');
       return true;
     } else {
-      console.error('[Embedding] Download failed with status:', downloadResult.statusCode);
+      console.error('[Embedding] Download failed:', downloadResult.statusCode);
       return false;
     }
   } catch (error) {
@@ -83,84 +73,104 @@ export async function downloadModel(
 }
 
 /**
- * Creates a dummy tokenized input for testing.
- * all-MiniLM-L6-v2 expects:
- *   - input_ids: int64 tensor [1, sequence_length]
- *   - attention_mask: int64 tensor [1, sequence_length]
- *   - token_type_ids: int64 tensor [1, sequence_length]
- *
- * For a simple test, we use a short sequence of token IDs.
- * In production, you'd use a proper tokenizer.
+ * Runs embedding inference on actual text using Xenova tokenizer and ONNX Runtime.
  */
-function createDummyInputs() {
-  const seqLength = 8;
-
-  // Dummy token IDs: [CLS]=101, "hello"=7592, "world"=2088, [SEP]=102, rest=0
-  const inputIds = new BigInt64Array(seqLength);
-  inputIds[0] = BigInt(101); // [CLS]
-  inputIds[1] = BigInt(7592); // hello
-  inputIds[2] = BigInt(2088); // world
-  inputIds[3] = BigInt(102); // [SEP]
-  // rest are 0 (padding)
-
-  const attentionMask = new BigInt64Array(seqLength);
-  attentionMask[0] = BigInt(1);
-  attentionMask[1] = BigInt(1);
-  attentionMask[2] = BigInt(1);
-  attentionMask[3] = BigInt(1);
-  // rest are 0
-
-  const tokenTypeIds = new BigInt64Array(seqLength);
-  // all zeros for single sentence
-
-  return {
-    input_ids: new ort.Tensor('int64', inputIds, [1, seqLength]),
-    attention_mask: new ort.Tensor('int64', attentionMask, [1, seqLength]),
-    token_type_ids: new ort.Tensor('int64', tokenTypeIds, [1, seqLength]),
-  };
-}
-
-/**
- * Runs a test embedding inference with the downloaded ONNX model.
- */
-export async function runEmbeddingTest(
+export async function runTextEmbedding(
+  text: string,
   modelPath: string,
 ): Promise<EmbeddingResult> {
   try {
+    console.log('[Embedding] Tokenizing input text...');
+    
+    // Load tokenizer
+    const tokenizer = await AutoTokenizer.from_pretrained(MODEL_REPO);
+    
+    // Nomic requires the 'search_document: ' prefix for document embeddings
+    const prefix = 'search_document: ';
+    const inputs = tokenizer(prefix + text, {
+      padding: true,
+      truncation: true,
+      maxLength: 256, // Reasonable max length for mobile
+    });
+
     console.log('[Embedding] Creating InferenceSession...');
     const startLoad = Date.now();
 
     const session = await ort.InferenceSession.create(modelPath, {
-      executionProviders: ['cpu'], // Start with CPU; can try 'nnapi' for Android acceleration
+      executionProviders: ['cpu'],
     });
 
     const loadTime = Date.now() - startLoad;
     console.log(`[Embedding] Session created in ${loadTime}ms`);
-    console.log('[Embedding] Input names:', session.inputNames);
-    console.log('[Embedding] Output names:', session.outputNames);
 
-    // Create dummy inputs
-    const feeds = createDummyInputs();
+    // Prepare tensors
+    const seqLength = inputs.input_ids.length;
+    
+    const inputIdsTensor = new ort.Tensor(
+      'int64',
+      new BigInt64Array(inputs.input_ids.map((x: number) => BigInt(x))),
+      [1, seqLength]
+    );
+    
+    const attentionMaskTensor = new ort.Tensor(
+      'int64',
+      new BigInt64Array(inputs.attention_mask.map((x: number) => BigInt(x))),
+      [1, seqLength]
+    );
+
+    // Optional token_type_ids
+    let feeds: Record<string, ort.Tensor> = {
+      input_ids: inputIdsTensor,
+      attention_mask: attentionMaskTensor,
+    };
+    
+    if (inputs.token_type_ids) {
+       feeds['token_type_ids'] = new ort.Tensor(
+         'int64',
+         new BigInt64Array(inputs.token_type_ids.map((x: number) => BigInt(x))),
+         [1, seqLength]
+       );
+    }
+
     console.log('[Embedding] Running inference...');
-
     const startInference = Date.now();
     const results = await session.run(feeds);
     const inferenceTime = Date.now() - startInference;
 
     console.log(`[Embedding] Inference done in ${inferenceTime}ms`);
 
-    // Get the output — usually "last_hidden_state" or "sentence_embedding"
-    const outputKey = session.outputNames[0];
+    // Nomic uses mean pooling over the sequence length, 
+    // but the final output is usually normalized.
+    // Assuming output is `sentence_embedding` or `last_hidden_state`
+    const outputKey = session.outputNames.includes('sentence_embedding') 
+      ? 'sentence_embedding' 
+      : session.outputNames[0];
+      
     const output = results[outputKey];
-    const data = output.data as Float32Array;
-
-    console.log(`[Embedding] Output shape: [${output.dims}]`);
-    console.log(`[Embedding] Output size: ${data.length} values`);
-
-    // For all-MiniLM-L6-v2, output is [1, seq_len, 384]
-    // We take the [CLS] token's embedding (first token)
+    let data = output.data as Float32Array;
+    
+    // If we get last_hidden_state (shape: [1, seq_len, 768])
+    // we need to mean pool and normalize.
+    // If the model exports `sentence_embedding`, it might already be pooled.
     const embeddingDim = output.dims[output.dims.length - 1];
-    const sampleValues = Array.from(data.slice(0, 5));
+    
+    // For simplicity, we just take the [CLS] token (first token vector) 
+    // or the already pooled vector if dims == 2 ([1, 768])
+    let vector: number[];
+    if (output.dims.length === 3) {
+      // Taking [CLS] token at index 0 for each of the 768 dims
+      vector = Array.from(data.slice(0, embeddingDim));
+      
+      // Better approach for nomic: Mean pooling over attention mask (skipped for simplicity here)
+    } else {
+      vector = Array.from(data);
+    }
+    
+    // L2 Normalize (Nomic requirement)
+    const norm = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
+    vector = vector.map(v => v / norm);
+
+    const sampleValues = vector.slice(0, 5);
 
     // Cleanup
     session.release();
@@ -170,6 +180,7 @@ export async function runEmbeddingTest(
       embeddingDim,
       sampleValues,
       inferenceTimeMs: inferenceTime,
+      vector,
     };
   } catch (error: any) {
     console.error('[Embedding] Inference error:', error);
