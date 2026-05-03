@@ -104,17 +104,21 @@ export async function runTextEmbedding(
     console.log(`[Embedding] Session created in ${loadTime}ms`);
 
     // Prepare tensors
-    const seqLength = inputs.input_ids.length;
+    const seqLength = inputs.input_ids.data.length;
     
+    // Transformers.js returns its own Tensor object. We need to access .data 
+    // and map it safely to BigInt for ONNX Runtime's int64 requirement.
+    const inputIdsArray = Array.from(inputs.input_ids.data).map((x: any) => BigInt(x));
     const inputIdsTensor = new ort.Tensor(
       'int64',
-      new BigInt64Array(inputs.input_ids.map((x: number) => BigInt(x))),
+      new BigInt64Array(inputIdsArray),
       [1, seqLength]
     );
     
+    const attentionMaskArray = Array.from(inputs.attention_mask.data).map((x: any) => BigInt(x));
     const attentionMaskTensor = new ort.Tensor(
       'int64',
-      new BigInt64Array(inputs.attention_mask.map((x: number) => BigInt(x))),
+      new BigInt64Array(attentionMaskArray),
       [1, seqLength]
     );
 
@@ -125,9 +129,10 @@ export async function runTextEmbedding(
     };
     
     if (inputs.token_type_ids) {
+       const tokenTypeArray = Array.from(inputs.token_type_ids.data).map((x: any) => BigInt(x));
        feeds['token_type_ids'] = new ort.Tensor(
          'int64',
-         new BigInt64Array(inputs.token_type_ids.map((x: number) => BigInt(x))),
+         new BigInt64Array(tokenTypeArray),
          [1, seqLength]
        );
     }
