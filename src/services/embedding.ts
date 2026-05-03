@@ -6,7 +6,7 @@ env.allowLocalModels = false;
 env.useBrowserCache = false;
 
 // We will use nomic-embed-text-v1.5 (quantized) for text embeddings
-const MODEL_REPO = 'nomic-ai/nomic-embed-text-v1';
+const MODEL_REPO = 'nomic-ai/nomic-embed-text-v1.5';
 const MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/onnx/model_quantized.onnx`;
 
 export interface EmbeddingResult {
