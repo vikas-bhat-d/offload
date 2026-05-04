@@ -14,6 +14,7 @@ const config = {
   resolver: {
     // Add ONNX model file extensions as recognized assets
     assetExts: [...assetExts, 'onnx', 'ort'],
+    sourceExts: [...sourceExts, 'mjs'],
   },
   transformer: {
     getTransformOptions: async () => ({

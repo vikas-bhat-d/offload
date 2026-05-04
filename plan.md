@@ -569,24 +569,24 @@ Give this group a short label of 2–3 words. Reply with only the label."
 > All phases below build directly on top of that working base.
 > **Platform:** Android throughout Phases 1–5. iOS is Phase 6.
 
-### Phase 1 — Ingestion Pipeline
+### Phase 1 — Ingestion Pipeline (In Progress)
 - [ ] Share intent handler — `react-native-share-menu` + `AndroidManifest.xml`
-- [ ] Text ingestion → clean + store in op-sqlite
+- [x] Text ingestion → clean + store in op-sqlite
 - [ ] Image ingestion → resize, store thumbnail, store raw path
 - [ ] Link ingestion — `react-native-link-preview` for OG tags
 - [ ] oEmbed fetch for YouTube, Reddit, Spotify, GitHub URLs
 - [ ] `embed_text` construction per content type (title + desc for links)
-- [ ] Basic flat list UI showing saved items (no clustering yet)
+- [x] Basic flat list UI showing saved items (no clustering yet)
 
-### Phase 2 — Embedding Pipeline (transformers.js spike first)
-- [ ] **Spike:** validate `@huggingface/transformers` v3 loading a local ONNX file from `RNFS.DocumentDirectoryPath` on bare RN — must pass before any other Phase 2 work
-- [ ] `modelManager.ts` — registry of URLs, paths, SHA256 hashes, `isReady()` checks
-- [ ] First-launch download screen with per-model progress bars
-- [ ] Resumable download via `react-native-fs`, snapshot persisted to `AsyncStorage`
+### Phase 2 — Embedding Pipeline (Completed)
+- [x] **Spike:** validate `@huggingface/transformers` v3 loading a local ONNX file from `RNFS.DocumentDirectoryPath` on bare RN — must pass before any other Phase 2 work
+- [x] `modelManager.ts` — registry of URLs, paths, SHA256 hashes, `isReady()` checks
+- [x] First-launch download screen with per-model progress bars
+- [x] Resumable download via `react-native-fs`, snapshot persisted to `AsyncStorage`
 - [ ] SHA256 integrity check via `react-native-crypto`
 - [ ] Android foreground service to keep download alive when backgrounded
-- [ ] Plug embedding into ingestion pipeline — every saved item gets a vector
-- [ ] Semantic search screen wired to existing sqlite-vec query
+- [x] Plug embedding into ingestion pipeline — every saved item gets a vector
+- [x] Semantic search screen wired to existing sqlite-vec query
 
 ### Phase 3 — Clustering
 - [ ] Incremental clustering on item insert (sqlite-vec centroid query)
