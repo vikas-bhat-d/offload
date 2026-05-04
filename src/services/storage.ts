@@ -7,10 +7,6 @@ export const db = open({
 
 export async function setupDatabase() {
   try {
-    // Drop existing tables for a clean slate in development
-    // await db.executeAsync('DROP TABLE IF EXISTS items;');
-    // await db.executeAsync('DROP TABLE IF EXISTS clusters;');
-
     await db.execute(`
       CREATE TABLE IF NOT EXISTS items (
         id            TEXT PRIMARY KEY,
@@ -43,12 +39,104 @@ export async function setupDatabase() {
 
 export async function checkSqliteVec() {
   try {
-    // Test if sqlite-vec is loaded by calling vec_version()
     const result = await db.execute('SELECT vec_version() as version;');
     console.log('[Storage] sqlite-vec version:', result.rows?.[0]?.version);
     return true;
   } catch (error) {
     console.error('[Storage] sqlite-vec is not available:', error);
     return false;
+  }
+}
+
+/**
+ * Helper to convert standard JavaScript number[] to a Uint8Array
+ * containing the raw bytes of a Float32Array. This is required
+ * by sqlite-vec for BLOB storage.
+ */
+export function getFloat32Buffer(vector: number[]): Uint8Array {
+  const f32 = new Float32Array(vector);
+  return new Uint8Array(f32.buffer);
+}
+
+/**
+ * Insert a new text item with its vector embedding.
+ */
+export async function insertItem(
+  id: string,
+  text: string,
+  embedding: number[]
+) {
+  try {
+    const buffer = getFloat32Buffer(embedding);
+    const preview = text.length > 50 ? text.substring(0, 50) + '...' : text;
+    
+    await db.execute(
+      `INSERT INTO items (id, content_type, raw_content, preview_text, embedding, created_at)
+       VALUES (?, ?, ?, ?, ?, ?);`,
+      [id, 'text', text, preview, buffer.buffer as ArrayBuffer, Date.now()]
+    );
+    console.log(`[Storage] Inserted item ${id}`);
+    return true;
+  } catch (err) {
+    console.error('[Storage] Insert error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Get all stored items (without returning the large embedding BLOB).
+ */
+export async function getAllItems() {
+  try {
+    const res = await db.execute(
+      `SELECT id, content_type, preview_text, created_at FROM items ORDER BY created_at DESC;`
+    );
+    return res.rows || [];
+  } catch (err) {
+    console.error('[Storage] Error fetching items:', err);
+    return [];
+  }
+}
+
+/**
+ * Search the database for items similar to the given query embedding.
+ * Uses sqlite-vec's vec_distance_cosine() function at the native C layer.
+ */
+export async function searchSimilarItems(queryEmbedding: number[], limit: number = 5) {
+  try {
+    const buffer = getFloat32Buffer(queryEmbedding);
+    
+    // vec_distance_cosine returns distance (0 = identical, 2 = opposite)
+    // So we ORDER BY score ASC
+    const res = await db.execute(
+      `
+      SELECT id, preview_text, content_type,
+             vec_distance_cosine(embedding, ?) AS distance
+      FROM items
+      ORDER BY distance ASC
+      LIMIT ?;
+      `,
+      [buffer.buffer as ArrayBuffer, limit]
+    );
+    
+    return res.rows || [];
+  } catch (err) {
+    console.error('[Storage] Search error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Danger zone: Delete all items.
+ */
+export async function deleteAllItems() {
+  try {
+    await db.execute('DELETE FROM items;');
+    await db.execute('DELETE FROM clusters;');
+    console.log('[Storage] All records deleted');
+    return true;
+  } catch (err) {
+    console.error('[Storage] Delete error:', err);
+    throw err;
   }
 }
