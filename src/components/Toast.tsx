@@ -101,14 +101,14 @@ const TOAST_COLORS: Record<ToastType, { bg: string; border: string }> = {
 
 export function ToastProvider() {
   const [toastData, setToastData] = useState<ToastData | null>(null);
-  const translateY = useRef(new Animated.Value(-120)).current;
+  const translateY = useRef(new Animated.Value(120)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hideToast = useCallback(() => {
     Animated.parallel([
       Animated.timing(translateY, {
-        toValue: -120,
+        toValue: 120,
         duration: 300,
         useNativeDriver: true,
       }),
@@ -130,8 +130,8 @@ export function ToastProvider() {
       clearTimeout(timeoutRef.current);
     }
 
-    // Reset and animate in
-    translateY.setValue(-120);
+    // Reset and animate in from bottom
+    translateY.setValue(120);
     opacity.setValue(0);
 
     Animated.parallel([
@@ -209,7 +209,7 @@ const { width: screenWidth } = Dimensions.get('window');
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 50,
+    bottom: 80,
     left: spacing.base,
     right: spacing.base,
     zIndex: 9999,

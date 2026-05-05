@@ -15,12 +15,12 @@ import {
   ScrollView,
   StatusBar,
 } from 'react-native';
-import { Zap } from 'lucide-react-native';
 import { colors } from '../theme/colors';
 import { textStyles } from '../theme/typography';
 import { spacing, borderRadius } from '../theme/spacing';
 import { ModelCard } from '../components/ModelCard';
 import { useModelStatus } from '../hooks/useModelStatus';
+import { Logo } from '../components/Logo';
 
 interface OnboardingScreenProps {
   onComplete: () => void;
@@ -99,8 +99,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
               transform: [{ translateY: slideUp }],
             },
           ]}>
-          <Zap size={52} color={colors.text.primary} style={{ marginBottom: spacing.sm }} />
-          <Text style={styles.logoText}>Offload</Text>
+          <Logo size="lg" />
           <Text style={styles.tagline}>
             Your thoughts,{'\n'}automatically organised.
           </Text>

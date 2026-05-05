@@ -13,8 +13,8 @@ export async function setupDatabase() {
         content_type  TEXT NOT NULL,       -- 'text' | 'image' | 'link'
         raw_content   TEXT,                -- original text or URL
         preview_text  TEXT,                -- display snippet
-        thumbnail_path TEXT,               -- local file path for images/OG images
-        embedding     BLOB NOT NULL,       -- Float32Array, 768 dims
+        thumbnail_path TEXT,               -- local file path or remote URL for thumbnails
+        embedding     BLOB NOT NULL,       -- Float32Array, 768 dims (zeros for unembedded images)
         cluster_id    TEXT,
         created_at    INTEGER NOT NULL
       );
@@ -30,10 +30,34 @@ export async function setupDatabase() {
       );
     `);
 
+    // Schema migrations -- safe to run multiple times (ALTER TABLE is idempotent via try-catch)
+    await runMigrations();
+
     console.log('[Storage] Database initialized successfully');
   } catch (error) {
     console.error('[Storage] Error initializing database:', error);
     throw error;
+  }
+}
+
+async function runMigrations() {
+  // v1: add source_name column for link items (platform badge)
+  try {
+    await db.execute('ALTER TABLE items ADD COLUMN source_name TEXT;');
+  } catch {
+    // Column already exists -- ignore
+  }
+  // v2: add is_embedded flag so unembedded images can be excluded from search
+  try {
+    await db.execute('ALTER TABLE items ADD COLUMN is_embedded INTEGER NOT NULL DEFAULT 1;');
+  } catch {
+    // Column already exists -- ignore
+  }
+  // v3: add description column for link items (OG description / oEmbed description)
+  try {
+    await db.execute('ALTER TABLE items ADD COLUMN description TEXT;');
+  } catch {
+    // Column already exists -- ignore
   }
 }
 
@@ -71,11 +95,11 @@ export async function insertItem(
     const preview = text.length > 50 ? text.substring(0, 50) + '...' : text;
     
     await db.execute(
-      `INSERT INTO items (id, content_type, raw_content, preview_text, embedding, created_at)
-       VALUES (?, ?, ?, ?, ?, ?);`,
+      `INSERT INTO items (id, content_type, raw_content, preview_text, embedding, is_embedded, created_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?);`,
       [id, 'text', text, preview, buffer.buffer as ArrayBuffer, Date.now()]
     );
-    console.log(`[Storage] Inserted item ${id}`);
+    console.log(`[Storage] Inserted text item ${id}`);
     return true;
   } catch (err) {
     console.error('[Storage] Insert error:', err);
@@ -84,12 +108,108 @@ export async function insertItem(
 }
 
 /**
- * Get all stored items (without returning the large embedding BLOB).
+ * Insert a link item (URL with fetched metadata) and its embedding.
+ */
+export async function insertLinkItem(
+  id: string,
+  url: string,
+  meta: {
+    title: string;
+    description: string;
+    thumbnailUrl: string | null;
+    sourceName: string;
+    embedText: string;
+  },
+  embedding: number[]
+) {
+  try {
+    const buffer = getFloat32Buffer(embedding);
+    const preview = meta.title || url;
+
+    await db.execute(
+      `INSERT INTO items
+         (id, content_type, raw_content, preview_text, description, thumbnail_path, source_name, embedding, is_embedded, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?);`,
+      [
+        id,
+        'link',
+        url,
+        preview,
+        meta.description ?? null,
+        meta.thumbnailUrl ?? null,
+        meta.sourceName,
+        buffer.buffer as ArrayBuffer,
+        Date.now(),
+      ]
+    );
+    console.log(`[Storage] Inserted link item ${id} (${meta.sourceName})`);
+    return true;
+  } catch (err) {
+    console.error('[Storage] insertLinkItem error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Insert a shared image item.
+ * Stores the local path only -- embedding happens later when the model is implemented.
+ * A 768-zero placeholder embedding is stored so the NOT NULL constraint is satisfied.
+ */
+export async function insertImageItem(
+  id: string,
+  imagePath: string,
+  mimeType: string
+) {
+  try {
+    // Zero-vector placeholder -- will be replaced when image embedding is added
+    const zeroEmbedding = new Float32Array(768);
+    const buffer = new Uint8Array(zeroEmbedding.buffer);
+
+    await db.execute(
+      `INSERT INTO items
+         (id, content_type, raw_content, preview_text, thumbnail_path, embedding, is_embedded, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?);`,
+      [
+        id,
+        'image',
+        imagePath,
+        mimeType,
+        imagePath,
+        buffer.buffer as ArrayBuffer,
+        Date.now(),
+      ]
+    );
+    console.log(`[Storage] Inserted image item ${id}`);
+    return true;
+  } catch (err) {
+    console.error('[Storage] insertImageItem error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Delete a single item by id.
+ */
+export async function deleteItem(id: string) {
+  try {
+    await db.execute('DELETE FROM items WHERE id = ?;', [id]);
+    console.log(`[Storage] Deleted item ${id}`);
+    return true;
+  } catch (err) {
+    console.error('[Storage] deleteItem error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Get all stored items (without the embedding BLOB).
  */
 export async function getAllItems() {
   try {
     const res = await db.execute(
-      `SELECT id, content_type, preview_text, created_at FROM items ORDER BY created_at DESC;`
+      `SELECT id, content_type, raw_content, preview_text, description, thumbnail_path, source_name, is_embedded, created_at
+       FROM items
+       ORDER BY created_at DESC;`
     );
     return res.rows || [];
   } catch (err) {
@@ -101,6 +221,7 @@ export async function getAllItems() {
 /**
  * Search the database for items similar to the given query embedding.
  * Uses sqlite-vec's vec_distance_cosine() function at the native C layer.
+ * Image items without an embedding (is_embedded = 0) are excluded.
  */
 export async function searchSimilarItems(queryEmbedding: number[], limit: number = 5) {
   try {
@@ -110,9 +231,10 @@ export async function searchSimilarItems(queryEmbedding: number[], limit: number
     // So we ORDER BY score ASC
     const res = await db.execute(
       `
-      SELECT id, preview_text, content_type,
+      SELECT id, preview_text, content_type, source_name, thumbnail_path,
              vec_distance_cosine(embedding, ?) AS distance
       FROM items
+      WHERE is_embedded = 1
       ORDER BY distance ASC
       LIMIT ?;
       `,

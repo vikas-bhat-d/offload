@@ -19,16 +19,18 @@ import { useAppContext } from '../context/AppContext';
 
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { HomeScreen } from '../screens/HomeScreen';
+import { ItemDetailScreen } from '../screens/ItemDetailScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { SplashScreen } from '../components/SplashScreen';
 
 import { Zap, Search, Settings, AlertTriangle } from 'lucide-react-native';
 
-import type { RootStackParamList, MainTabParamList } from './types';
+import type { RootStackParamList, MainTabParamList, HomeStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
+const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 
 // ─── Tab Icons ──
 
@@ -37,6 +39,17 @@ const TAB_ICONS: Record<string, React.FC<any>> = {
   Search: Search,
   Settings: Settings,
 };
+
+// ─── Home Stack (list + detail) ──────────────────────
+
+function HomeNavigator() {
+  return (
+    <HomeStack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+      <HomeStack.Screen name="HomeList" component={HomeScreen} />
+      <HomeStack.Screen name="ItemDetail" component={ItemDetailScreen} />
+    </HomeStack.Navigator>
+  );
+}
 
 // ─── Main Tab Navigator ──────────────────────────────
 
@@ -59,7 +72,7 @@ function MainTabs() {
           );
         },
       })}>
-      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Home" component={HomeNavigator} />
       <Tab.Screen name="Search" component={SearchScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>

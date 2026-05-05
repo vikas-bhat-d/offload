@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Offload launcher icon foreground layer.
+  Designed to match the Logo component: green circle with a white diamond inside.
+
+  The adaptive icon safe zone is the center 72×72 dp within the 108×108 dp canvas.
+  Both layers are centered. Masking shape (circle/squircle/etc.) is applied by the launcher.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Green circle (matches colors.accent.primary = #7FA688) -->
+    <!-- Two-arc full circle: center 54,54, radius 34dp -->
+    <path
+        android:fillColor="#7FA688"
+        android:pathData="M54,20 A34,34 0 0 1 54,88 A34,34 0 0 1 54,20 Z" />
+
+    <!-- White diamond (rotated square) inside the green circle -->
+    <!-- Half-size 16dp → points at 16dp from center. Matches Logo.tsx diamond proportion -->
+    <path
+        android:fillColor="#F5F0E8"
+        android:pathData="M54,35 L73,54 L54,73 L35,54 Z" />
+
+</vector>

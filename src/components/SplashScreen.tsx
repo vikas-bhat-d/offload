@@ -7,10 +7,10 @@
 
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Animated, StyleSheet } from 'react-native';
-import { Zap } from 'lucide-react-native';
 import { colors } from '../theme/colors';
 import { textStyles } from '../theme/typography';
 import { spacing } from '../theme/spacing';
+import { Logo } from './Logo';
 
 export function SplashScreen() {
   const fadeIn = useRef(new Animated.Value(0)).current;
@@ -63,8 +63,8 @@ export function SplashScreen() {
             transform: [{ scale: logoScale }],
           },
         ]}>
-        <Zap size={48} color={colors.text.primary} style={{ marginBottom: spacing.sm }} />
-        <Text style={styles.logoText}>Offload</Text>
+        <Logo size="lg" />
+        <Text style={styles.logoText}>On-device memory</Text>
       </Animated.View>
 
       <Animated.View style={[styles.loadingRow, { opacity: dotOpacity }]}>
